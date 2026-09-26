@@ -869,6 +869,7 @@ app.include_router(email_router)
 # AFTER email so the codex_routes can borrow the email router for shared
 # search/threading helpers.
 from routes.codex_routes import setup_codex_routes, setup_claude_routes
+from routes.mcp.remote_mcp import odysseus_mcp_enabled, odysseus_mcp_lifespan
 app.include_router(setup_codex_routes(
     email_router=email_router,
     memory_router=memory_router,
@@ -876,6 +877,14 @@ app.include_router(setup_codex_routes(
     document_router=document_router,
 ))
 app.include_router(setup_claude_routes())
+
+# Inbound MCP server (streamable HTTP). External AI agents connect to POST /mcp
+# with a Bearer ody_ API token and reach the scope-gated /api/codex/* tools.
+# The app's AuthMiddleware (added above, outermost) validates the bearer token
+# first; FastMCP re-verifies it and forwards it on loopback tool calls.
+if odysseus_mcp_enabled():
+    from routes.mcp.remote_mcp import build_odysseus_mcp_app
+    app.mount("/mcp", build_odysseus_mcp_app(auth_manager), name="mcp")
 
 from routes.vault.vault_routes import setup_vault_routes
 app.include_router(setup_vault_routes())
@@ -1023,7 +1032,15 @@ async def _lifespan(app):
     """Modern lifespan context manager replacing deprecated @app.on_event."""
     # ── STARTUP ──
     await _startup_event()
-    yield
+    # Drive the mounted MCP session-manager lifecycle. Mounted sub-apps never
+    # get their own lifespan invoked by uvicorn, so the session manager's
+    # task group is started here for the application lifetime.
+    _mcp_run = odysseus_mcp_lifespan()
+    if _mcp_run is not None:
+        async with _mcp_run:
+            yield
+    else:
+        yield
     # ── SHUTDOWN ──
     await _shutdown_event()
 
