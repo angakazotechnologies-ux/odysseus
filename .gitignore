@@ -114,6 +114,9 @@ research_data/
 dev-docs/
 # Windows-port working docs (local only, not for public repo)
 docs/windows-port/
+# Third-party vendor system prompts collected for reference. These are
+# other companies' proprietary content and are not ours to redistribute.
+prompts/system_prompts_leaks/
 
 # Local config
 compound.config.json
